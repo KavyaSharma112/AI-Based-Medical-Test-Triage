@@ -1,0 +1,26 @@
+# AI Medical Test Triage System — Backend Dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Web Framework ──────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0     # ASGI server to run FastAPI
+
+# ── ML / Data ──────────────────────────────────────────
+scikit-learn==1.4.2           # MUST match the version you trained models with
+joblib==1.4.2                  # For loading .pkl files
+numpy==1.26.4
+pandas==2.2.2
+
+# ── PDF Extraction ─────────────────────────────────────
+pdfplumber==0.11.0             # Primary PDF text extractor
+PyMuPDF==1.24.2                # Fallback PDF extractor (fitz)
+
+# ── Optional: OCR for scanned PDFs ─────────────────────
+# pytesseract==0.3.10          # Uncomment if needed
+# Pillow==10.3.0               # Required by pytesseract
+
+# ── CORS / File Upload ─────────────────────────────────
+python-multipart==0.0.9       # Required for UploadFile in FastAPI
+
+# ── Dev Tools ──────────────────────────────────────────
+httpx==0.27.0                  # For testing endpoints
