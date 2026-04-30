@@ -1,4 +1,5 @@
 // RiskCard.jsx — Displays one disease's prediction result
+import React from "react";
 import { useState } from "react";
 
 const ICONS = {
