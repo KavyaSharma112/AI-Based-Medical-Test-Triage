@@ -1,5 +1,16 @@
+# Node
+frontend/node_modules/
+node_modules/
+
+# Python
 venv/
 __pycache__/
 *.pyc
+
+# ML
+*.pkl
+
+# Jupyter
 .ipynb_checkpoints/
-.env
+
+.idea/
