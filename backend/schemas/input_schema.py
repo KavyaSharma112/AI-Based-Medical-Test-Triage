@@ -100,6 +100,7 @@ class MasterInputSchema(BaseModel):
     aspartate_aminotransferase: Optional[float] = Field(None, description="AST / SGOT (IU/L)", example=18)
     total_proteins: Optional[float] = Field(None, description="Total proteins (g/dL)", example=6.8)
     albumin_globulin_ratio: Optional[float] = Field(None, description="Albumin and globulin ratio", example=0.9)
+    serum_albumin: Optional[float] = Field(None, description="Serum albumin (g/dL) — used for liver model. Range 3.5–5.5", example=4.0)
 
     # ── DIABETES FEATURES ─────────────────────────────────────────────────────
     pregnancies: Optional[float] = Field(None, description="Number of pregnancies", example=0)
@@ -117,12 +118,18 @@ class MasterInputSchema(BaseModel):
 class PredictionResult(BaseModel):
     """Result for a single disease prediction."""
     disease: str
-    risk_level: str          # "Low", "Moderate", "High"
-    probability: float       # 0.0 to 1.0
-    percentage: int          # 0 to 100
+    risk_level: str                           # "Low", "Moderate", "High"
+    probability: float                        # Adjusted probability (0.0 to 1.0)
+    percentage: int                           # 0 to 100
     recommendation: str
     features_used: list[str]
     model_available: bool
+    # New fields added in v2 (clinical calibration)
+    raw_model_probability: Optional[float] = None
+    clinical_risk_score: Optional[float] = None
+    confidence_note: Optional[str] = None
+    abnormal_markers: Optional[list[str]] = []
+    markers_checked: Optional[int] = 0
 
 
 class AllPredictionsResponse(BaseModel):

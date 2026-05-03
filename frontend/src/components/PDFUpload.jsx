@@ -1,4 +1,5 @@
 // PDFUpload.jsx — Drag-and-drop PDF upload component
+import React from "react";
 import { useState, useRef } from "react";
 import { uploadPDF } from "../services/api";
 

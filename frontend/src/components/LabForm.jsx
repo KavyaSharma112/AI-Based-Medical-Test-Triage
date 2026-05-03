@@ -1,6 +1,6 @@
 // LabForm.jsx — Input form grouped by disease / body system
 // All fields are optional. User fills in only what they have.
-
+import React from "react";
 // Field definitions grouped into sections
 const SECTIONS = [
   {
