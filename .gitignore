@@ -1,0 +1,17 @@
+# Node
+frontend/node_modules/
+node_modules/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# ML
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+
+.idea/
+frontend/.vite/
