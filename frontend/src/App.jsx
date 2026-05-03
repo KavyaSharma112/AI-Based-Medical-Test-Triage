@@ -1,9 +1,11 @@
 // App.jsx — Main application. Manages mode switching, form state, and results display.
+import React from "react";
 import { useState } from "react";
 import LabForm from "./components/LabForm";
 import PDFUpload from "./components/PDFUpload";
 import RiskCard from "./components/RiskCard";
 import { predictAll } from "./services/api";
+import React from "react";
 
 // Animation keyframes injected once
 const GLOBAL_STYLES = `

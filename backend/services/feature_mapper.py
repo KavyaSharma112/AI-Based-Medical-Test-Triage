@@ -1,39 +1,9 @@
-"""
-Feature Mapping Layer
-=====================
-This is the CORE of the triage system.
-
-Each ML model was trained on a specific dataset with specific column names
-and a specific order. This module maps the unified MasterInputSchema to
-each model's expected input format.
-
-Key concepts:
-  1. FEATURE ORDER matters — sklearn models expect features in the exact
-     same column order they were trained on.
-  2. MISSING VALUES are filled with sensible defaults (dataset means or
-     clinically safe neutral values).
-  3. ENCODING: Some models expect encoded categorical values (e.g., 0/1
-     for yes/no). We handle those mappings here.
-
-─────────────────────────────────────────────────────────────────────────
-HOW TO READ THIS FILE
-─────────────────────────────────────────────────────────────────────────
-Each model has:
-  - FEATURE_ORDER: list of feature names in the order the model was trained
-  - DEFAULTS: fallback values for missing features
-  - A mapper function: takes MasterInputSchema → numpy array
-
-The mapper functions are imported and called by the prediction services.
-─────────────────────────────────────────────────────────────────────────
-"""
-
 import numpy as np
 from schemas.input_schema import MasterInputSchema
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# KIDNEY DISEASE — Trained on kidney_full.csv (CKD dataset)
-# Features from UCI Chronic Kidney Disease dataset
+# KIDNEY DISEASE
 # ══════════════════════════════════════════════════════════════════════════════
 
 KIDNEY_FEATURE_ORDER = [
@@ -42,82 +12,64 @@ KIDNEY_FEATURE_ORDER = [
     "htn", "dm", "cad", "appet", "pe", "ane"
 ]
 
-# Default values = approximate column means from the CKD dataset
 KIDNEY_DEFAULTS = {
-    "age": 51.0,
-    "bp": 76.0,     # blood pressure
-    "sg": 1.017,    # specific gravity
-    "al": 1.0,      # albumin
-    "su": 0.0,      # sugar
-    "rbc": 0.0,     # red blood cells (0=normal, 1=abnormal)
-    "pc": 0.0,      # pus cell (0=normal, 1=abnormal)
-    "pcc": 0.0,     # pus cell clumps
-    "ba": 0.0,      # bacteria
-    "bgr": 148.0,   # blood glucose random
-    "bu": 53.0,     # blood urea
-    "sc": 3.0,      # serum creatinine
-    "sod": 137.0,   # sodium
-    "pot": 4.6,     # potassium
-    "hemo": 12.5,   # haemoglobin
-    "pcv": 38.0,    # packed cell volume
-    "wbcc": 8400.0, # white blood cell count
-    "rbcc": 4.7,    # red blood cell count
-    "htn": 0,       # hypertension
-    "dm": 0,        # diabetes mellitus
-    "cad": 0,       # coronary artery disease
-    "appet": 1,     # appetite (1=good)
-    "pe": 0,        # pedal edema
-    "ane": 0,       # anemia
+    "age": 40.0, "bp": 70.0, "sg": 1.020, "al": 0.0, "su": 0.0,
+    "rbc": 0.0, "pc": 0.0, "pcc": 0.0, "ba": 0.0,
+    "bgr": 90.0,   # was 148.0 (prediabetic) → fixed to healthy
+    "bu": 15.0,    # was 53.0 (elevated) → fixed to healthy
+    "sc": 0.9,     # was 3.0 (CKD level) → fixed to healthy
+    "sod": 140.0, "pot": 4.0,
+    "hemo": 14.5,  # was 12.5 (borderline low) → fixed
+    "pcv": 44.0, "wbcc": 7500.0, "rbcc": 5.0,
+    "htn": 0, "dm": 0, "cad": 0, "appet": 1, "pe": 0, "ane": 0,
 }
 
 
 def map_kidney_features(data: MasterInputSchema) -> np.ndarray:
-    """Map master schema to the 24 kidney disease features."""
-    # Build the feature dict using user data where available, defaults otherwise
     features = {
-        "age":  data.age   if data.age   is not None else KIDNEY_DEFAULTS["age"],
+        "age":  data.age            if data.age            is not None else KIDNEY_DEFAULTS["age"],
         "bp":   data.blood_pressure if data.blood_pressure is not None else KIDNEY_DEFAULTS["bp"],
         "sg":   data.specific_gravity if data.specific_gravity is not None else KIDNEY_DEFAULTS["sg"],
-        "al":   data.albumin if data.albumin is not None else KIDNEY_DEFAULTS["al"],
-        "su":   data.sugar  if data.sugar  is not None else KIDNEY_DEFAULTS["su"],
+        "al":   data.albumin        if data.albumin        is not None else KIDNEY_DEFAULTS["al"],
+        "su":   data.sugar          if data.sugar          is not None else KIDNEY_DEFAULTS["su"],
         "rbc":  data.red_blood_cells if data.red_blood_cells is not None else KIDNEY_DEFAULTS["rbc"],
-        "pc":   data.pus_cell if data.pus_cell is not None else KIDNEY_DEFAULTS["pc"],
+        "pc":   data.pus_cell       if data.pus_cell       is not None else KIDNEY_DEFAULTS["pc"],
         "pcc":  data.pus_cell_clumps if data.pus_cell_clumps is not None else KIDNEY_DEFAULTS["pcc"],
-        "ba":   data.bacteria if data.bacteria is not None else KIDNEY_DEFAULTS["ba"],
+        "ba":   data.bacteria       if data.bacteria       is not None else KIDNEY_DEFAULTS["ba"],
         "bgr":  data.blood_glucose_random if data.blood_glucose_random is not None else KIDNEY_DEFAULTS["bgr"],
-        "bu":   data.blood_urea if data.blood_urea is not None else KIDNEY_DEFAULTS["bu"],
+        "bu":   data.blood_urea     if data.blood_urea     is not None else KIDNEY_DEFAULTS["bu"],
         "sc":   data.serum_creatinine if data.serum_creatinine is not None else KIDNEY_DEFAULTS["sc"],
-        "sod":  data.sodium if data.sodium is not None else KIDNEY_DEFAULTS["sod"],
-        "pot":  data.potassium if data.potassium is not None else KIDNEY_DEFAULTS["pot"],
-        "hemo": data.haemoglobin if data.haemoglobin is not None else KIDNEY_DEFAULTS["hemo"],
+        "sod":  data.sodium         if data.sodium         is not None else KIDNEY_DEFAULTS["sod"],
+        "pot":  data.potassium      if data.potassium      is not None else KIDNEY_DEFAULTS["pot"],
+        "hemo": data.haemoglobin    if data.haemoglobin    is not None else KIDNEY_DEFAULTS["hemo"],
         "pcv":  data.packed_cell_volume if data.packed_cell_volume is not None else KIDNEY_DEFAULTS["pcv"],
         "wbcc": data.white_blood_cell_count if data.white_blood_cell_count is not None else KIDNEY_DEFAULTS["wbcc"],
         "rbcc": data.red_blood_cell_count if data.red_blood_cell_count is not None else KIDNEY_DEFAULTS["rbcc"],
-        "htn":  data.hypertension if data.hypertension is not None else KIDNEY_DEFAULTS["htn"],
+        "htn":  data.hypertension   if data.hypertension   is not None else KIDNEY_DEFAULTS["htn"],
         "dm":   data.diabetes_mellitus if data.diabetes_mellitus is not None else KIDNEY_DEFAULTS["dm"],
         "cad":  data.coronary_artery_disease if data.coronary_artery_disease is not None else KIDNEY_DEFAULTS["cad"],
-        "appet": data.appetite if data.appetite is not None else KIDNEY_DEFAULTS["appet"],
-        "pe":   data.peda_edema if data.peda_edema is not None else KIDNEY_DEFAULTS["pe"],
-        "ane":  data.aanemia if data.aanemia is not None else KIDNEY_DEFAULTS["ane"],
+        "appet": data.appetite      if data.appetite       is not None else KIDNEY_DEFAULTS["appet"],
+        "pe":   data.peda_edema     if data.peda_edema     is not None else KIDNEY_DEFAULTS["pe"],
+        "ane":  data.aanemia        if data.aanemia        is not None else KIDNEY_DEFAULTS["ane"],
     }
-    # Return as 2D array (1 sample, 24 features) in the correct order
     return np.array([[features[f] for f in KIDNEY_FEATURE_ORDER]], dtype=float)
 
 
 def get_kidney_features_used(data: MasterInputSchema) -> list:
-    """Return list of kidney features that were actually provided by user."""
     mapping = {
         "age": data.age, "blood_pressure": data.blood_pressure,
         "specific_gravity": data.specific_gravity, "albumin": data.albumin,
         "sugar": data.sugar, "blood_glucose_random": data.blood_glucose_random,
         "blood_urea": data.blood_urea, "serum_creatinine": data.serum_creatinine,
-        "haemoglobin": data.haemoglobin,
+        "sodium": data.sodium, "potassium": data.potassium,
+        "haemoglobin": data.haemoglobin, "packed_cell_volume": data.packed_cell_volume,
+        "wbc_count": data.white_blood_cell_count, "rbc_count": data.red_blood_cell_count,
     }
     return [k for k, v in mapping.items() if v is not None]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HEART DISEASE — Trained on UCI Heart Disease dataset
+# HEART DISEASE
 # ══════════════════════════════════════════════════════════════════════════════
 
 HEART_FEATURE_ORDER = [
@@ -126,34 +78,26 @@ HEART_FEATURE_ORDER = [
 ]
 
 HEART_DEFAULTS = {
-    "age": 54.0,
-    "sex": 1,           # 0=female, 1=male
-    "cp": 0,            # chest pain type (0=asymptomatic is most common in dataset)
-    "trestbps": 131.0,  # resting BP
-    "chol": 247.0,      # cholesterol
-    "fbs": 0,           # fasting blood sugar <= 120
-    "restecg": 1,       # normal
-    "thalch": 149.0,    # max heart rate
-    "exang": 0,         # no exercise angina
-    "oldpeak": 1.0,     # ST depression
-    "slope": 1,         # flat
-    "ca": 0.0,          # 0 major vessels
-    "thal": 1,          # normal
+    "age": 45.0, "sex": 1, "cp": 1,
+    "trestbps": 120.0,  # was 131.0 (hypertensive) → fixed
+    "chol": 200.0,      # was 247.0 (borderline high) → fixed
+    "fbs": 0, "restecg": 1, "thalch": 160.0, "exang": 0,
+    "oldpeak": 0.0,     # was 1.0 (elevated) → fixed
+    "slope": 2, "ca": 0.0, "thal": 2,
 }
 
 
 def map_heart_features(data: MasterInputSchema) -> np.ndarray:
-    """Map master schema to the 13 heart disease features."""
-    # Use sex or gender (they mean the same, different field names)
-    sex_val = data.sex if data.sex is not None else (
-              data.gender if data.gender is not None else HEART_DEFAULTS["sex"])
-
+    sex_val = (data.sex if data.sex is not None
+               else data.gender if data.gender is not None
+               else HEART_DEFAULTS["sex"])
     features = {
         "age":      data.age if data.age is not None else HEART_DEFAULTS["age"],
         "sex":      sex_val,
         "cp":       data.chest_pain_type if data.chest_pain_type is not None else HEART_DEFAULTS["cp"],
-        "trestbps": data.resting_blood_pressure if data.resting_blood_pressure is not None else (
-                    data.blood_pressure if data.blood_pressure is not None else HEART_DEFAULTS["trestbps"]),
+        "trestbps": (data.resting_blood_pressure if data.resting_blood_pressure is not None
+                     else data.blood_pressure if data.blood_pressure is not None
+                     else HEART_DEFAULTS["trestbps"]),
         "chol":     data.cholesterol if data.cholesterol is not None else HEART_DEFAULTS["chol"],
         "fbs":      data.fasting_blood_sugar if data.fasting_blood_sugar is not None else HEART_DEFAULTS["fbs"],
         "restecg":  data.resting_ecg if data.resting_ecg is not None else HEART_DEFAULTS["restecg"],
@@ -173,12 +117,13 @@ def get_heart_features_used(data: MasterInputSchema) -> list:
         "chest_pain_type": data.chest_pain_type, "cholesterol": data.cholesterol,
         "resting_blood_pressure": data.resting_blood_pressure,
         "max_heart_rate": data.max_heart_rate, "st_depression": data.st_depression,
+        "exercise_angina": data.exercise_angina, "num_vessels": data.num_vessels,
     }
     return [k for k, v in mapping.items() if v is not None]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LIVER DISEASE — Trained on ILPD (Indian Liver Patient Dataset)
+# LIVER DISEASE
 # ══════════════════════════════════════════════════════════════════════════════
 
 LIVER_FEATURE_ORDER = [
@@ -189,40 +134,36 @@ LIVER_FEATURE_ORDER = [
 ]
 
 LIVER_DEFAULTS = {
-    "Age": 44.0,
-    "Gender": 1,                    # 1=Male (more common in dataset)
-    "Total_Bilirubin": 3.3,
-    "Direct_Bilirubin": 1.5,
-    "Alkaline_Phosphotase": 290.0,
-    "Alamine_Aminotransferase": 80.0,
-    "Aspartate_Aminotransferase": 109.0,
-    "Total_Protiens": 6.5,
-    "Albumin": 3.1,
-    "Albumin_and_Globulin_Ratio": 0.95,
+    "Age": 44.0, "Gender": 1,
+    "Total_Bilirubin": 0.7,         
+    "Direct_Bilirubin": 0.2,        
+    "Alkaline_Phosphotase": 90.0,   
+    "Alamine_Aminotransferase": 25.0,   
+    "Aspartate_Aminotransferase": 25.0, 
+    "Total_Protiens": 7.0,
+    "Albumin": 4.0,
+    "Albumin_and_Globulin_Ratio": 1.2,
 }
 
 
 def map_liver_features(data: MasterInputSchema) -> np.ndarray:
-    """Map master schema to the 10 liver disease features."""
-    # Gender: notebook used LabelEncoder on Male/Female → Male=1, Female=0
-    gender_val = data.gender if data.gender is not None else (
-                 data.sex if data.sex is not None else LIVER_DEFAULTS["Gender"])
+    gender_val = (data.gender if data.gender is not None
+                  else data.sex if data.sex is not None
+                  else LIVER_DEFAULTS["Gender"])
 
-    # Albumin: kidney model uses it as urine albumin (0-5 scale)
-    # Liver model uses serum albumin (g/dL, typically 3-5)
-    # We use the same field but it's context-dependent
-    albumin_val = data.albumin if (data.albumin is not None and data.albumin > 5) else LIVER_DEFAULTS["Albumin"]
+    albumin_val = (data.serum_albumin if data.serum_albumin is not None
+                   else LIVER_DEFAULTS["Albumin"])
 
     features = {
-        "Age":                      data.age if data.age is not None else LIVER_DEFAULTS["Age"],
-        "Gender":                   gender_val,
-        "Total_Bilirubin":          data.total_bilirubin if data.total_bilirubin is not None else LIVER_DEFAULTS["Total_Bilirubin"],
-        "Direct_Bilirubin":         data.direct_bilirubin if data.direct_bilirubin is not None else LIVER_DEFAULTS["Direct_Bilirubin"],
-        "Alkaline_Phosphotase":     data.alkaline_phosphotase if data.alkaline_phosphotase is not None else LIVER_DEFAULTS["Alkaline_Phosphotase"],
-        "Alamine_Aminotransferase": data.alamine_aminotransferase if data.alamine_aminotransferase is not None else LIVER_DEFAULTS["Alamine_Aminotransferase"],
+        "Age":                        data.age if data.age is not None else LIVER_DEFAULTS["Age"],
+        "Gender":                     gender_val,
+        "Total_Bilirubin":            data.total_bilirubin if data.total_bilirubin is not None else LIVER_DEFAULTS["Total_Bilirubin"],
+        "Direct_Bilirubin":           data.direct_bilirubin if data.direct_bilirubin is not None else LIVER_DEFAULTS["Direct_Bilirubin"],
+        "Alkaline_Phosphotase":       data.alkaline_phosphotase if data.alkaline_phosphotase is not None else LIVER_DEFAULTS["Alkaline_Phosphotase"],
+        "Alamine_Aminotransferase":   data.alamine_aminotransferase if data.alamine_aminotransferase is not None else LIVER_DEFAULTS["Alamine_Aminotransferase"],
         "Aspartate_Aminotransferase": data.aspartate_aminotransferase if data.aspartate_aminotransferase is not None else LIVER_DEFAULTS["Aspartate_Aminotransferase"],
-        "Total_Protiens":           data.total_proteins if data.total_proteins is not None else LIVER_DEFAULTS["Total_Protiens"],
-        "Albumin":                  albumin_val,
+        "Total_Protiens":             data.total_proteins if data.total_proteins is not None else LIVER_DEFAULTS["Total_Protiens"],
+        "Albumin":                    albumin_val,
         "Albumin_and_Globulin_Ratio": data.albumin_globulin_ratio if data.albumin_globulin_ratio is not None else LIVER_DEFAULTS["Albumin_and_Globulin_Ratio"],
     }
     return np.array([[features[f] for f in LIVER_FEATURE_ORDER]], dtype=float)
@@ -233,16 +174,17 @@ def get_liver_features_used(data: MasterInputSchema) -> list:
         "age": data.age, "total_bilirubin": data.total_bilirubin,
         "direct_bilirubin": data.direct_bilirubin,
         "alkaline_phosphotase": data.alkaline_phosphotase,
-        "alamine_aminotransferase (ALT)": data.alamine_aminotransferase,
-        "aspartate_aminotransferase (AST)": data.aspartate_aminotransferase,
-        "total_proteins": data.total_proteins, "albumin": data.albumin,
+        "ALT (SGPT)": data.alamine_aminotransferase,
+        "AST (SGOT)": data.aspartate_aminotransferase,
+        "total_proteins": data.total_proteins,
+        "serum_albumin": data.serum_albumin,
         "albumin_globulin_ratio": data.albumin_globulin_ratio,
     }
     return [k for k, v in mapping.items() if v is not None]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DIABETES — Trained on Pima Indians Diabetes dataset
+# DIABETES
 # ══════════════════════════════════════════════════════════════════════════════
 
 DIABETES_FEATURE_ORDER = [
@@ -251,29 +193,31 @@ DIABETES_FEATURE_ORDER = [
 ]
 
 DIABETES_DEFAULTS = {
-    "Pregnancies": 3.8,
-    "Glucose": 120.9,      # mean of dataset (after replacing 0s)
-    "BloodPressure": 69.1,
-    "SkinThickness": 20.5,
-    "Insulin": 79.8,       # mean after replacing 0s
-    "BMI": 32.0,
-    "DiabetesPedigreeFunction": 0.47,
-    "Age": 33.0,
+    "Pregnancies": 1.0,    
+    "Glucose": 90.0,       
+    "BloodPressure": 72.0,
+    "SkinThickness": 20.0,
+    "Insulin": 85.0,
+    "BMI": 26.0,          
+    "DiabetesPedigreeFunction": 0.35,
+    "Age": 35.0,
 }
 
 
 def map_diabetes_features(data: MasterInputSchema) -> np.ndarray:
-    """Map master schema to the 8 diabetes features."""
     features = {
-        "Pregnancies":              data.pregnancies if data.pregnancies is not None else DIABETES_DEFAULTS["Pregnancies"],
-        "Glucose":                  data.glucose if data.glucose is not None else (
-                                    data.blood_glucose_random if data.blood_glucose_random is not None else DIABETES_DEFAULTS["Glucose"]),
-        "BloodPressure":            data.blood_pressure if data.blood_pressure is not None else DIABETES_DEFAULTS["BloodPressure"],
-        "SkinThickness":            data.skin_thickness if data.skin_thickness is not None else DIABETES_DEFAULTS["SkinThickness"],
-        "Insulin":                  data.insulin if data.insulin is not None else DIABETES_DEFAULTS["Insulin"],
-        "BMI":                      data.bmi if data.bmi is not None else DIABETES_DEFAULTS["BMI"],
-        "DiabetesPedigreeFunction": data.diabetes_pedigree_function if data.diabetes_pedigree_function is not None else DIABETES_DEFAULTS["DiabetesPedigreeFunction"],
-        "Age":                      data.age if data.age is not None else DIABETES_DEFAULTS["Age"],
+        "Pregnancies": data.pregnancies if data.pregnancies is not None else DIABETES_DEFAULTS["Pregnancies"],
+        "Glucose":     (data.glucose if data.glucose is not None
+                        else data.blood_glucose_random if data.blood_glucose_random is not None
+                        else DIABETES_DEFAULTS["Glucose"]),
+        "BloodPressure": data.blood_pressure if data.blood_pressure is not None else DIABETES_DEFAULTS["BloodPressure"],
+        "SkinThickness": data.skin_thickness if data.skin_thickness is not None else DIABETES_DEFAULTS["SkinThickness"],
+        "Insulin":     data.insulin if data.insulin is not None else DIABETES_DEFAULTS["Insulin"],
+        "BMI":         data.bmi if data.bmi is not None else DIABETES_DEFAULTS["BMI"],
+        "DiabetesPedigreeFunction": (data.diabetes_pedigree_function
+                                     if data.diabetes_pedigree_function is not None
+                                     else DIABETES_DEFAULTS["DiabetesPedigreeFunction"]),
+        "Age":         data.age if data.age is not None else DIABETES_DEFAULTS["Age"],
     }
     return np.array([[features[f] for f in DIABETES_FEATURE_ORDER]], dtype=float)
 
@@ -281,10 +225,9 @@ def map_diabetes_features(data: MasterInputSchema) -> np.ndarray:
 def get_diabetes_features_used(data: MasterInputSchema) -> list:
     mapping = {
         "glucose": data.glucose or data.blood_glucose_random,
-        "blood_pressure": data.blood_pressure,
-        "bmi": data.bmi, "insulin": data.insulin,
-        "age": data.age, "pregnancies": data.pregnancies,
-        "skin_thickness": data.skin_thickness,
+        "blood_pressure": data.blood_pressure, "bmi": data.bmi,
+        "insulin": data.insulin, "age": data.age,
+        "pregnancies": data.pregnancies, "skin_thickness": data.skin_thickness,
         "diabetes_pedigree_function": data.diabetes_pedigree_function,
     }
     return [k for k, v in mapping.items() if v is not None]

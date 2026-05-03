@@ -1,21 +1,12 @@
 """
-Prediction Service
-==================
-This module contains the prediction logic for each disease.
-
-For each model it:
-  1. Maps the master schema to model-specific features
-  2. Applies scaling if the model needs it (scaler stored in pkl)
-  3. Gets probability from model.predict_proba()
-  4. Converts probability → risk level (Low / Moderate / High)
-  5. Returns a recommendation based on risk level
-
-─────────────────────────────────────────────────────────────
-RISK LEVEL THRESHOLDS
-  Low:      probability < 0.40
-  Moderate: probability 0.40–0.65
-  High:     probability > 0.65
-─────────────────────────────────────────────────────────────
+Prediction Service (v2 — Clinically Calibrated)
+=================================================
+Changes from v1:
+  - Raw model probability is ADJUSTED using clinical sanity check
+  - Each prediction includes raw_model_probability, adjusted probability,
+    clinical_risk_score, confidence_note, and abnormal_markers list
+  - Risk level is determined from ADJUSTED probability, not raw model output
+  - Confidence note explains WHY the risk was adjusted
 """
 
 import numpy as np
@@ -26,245 +17,143 @@ from services.feature_mapper import (
     map_liver_features, get_liver_features_used,
     map_diabetes_features, get_diabetes_features_used,
 )
+from services.clinical_checker import (
+    compute_clinical_score, apply_clinical_adjustment, get_confidence_note,
+    KIDNEY_KEY_MARKERS, HEART_KEY_MARKERS, LIVER_KEY_MARKERS, DIABETES_KEY_MARKERS,
+)
 
-
-# ─── Risk Level Logic ─────────────────────────────────────────────────────────
 
 def probability_to_risk(prob: float) -> str:
-    """Convert 0-1 probability to a human-readable risk level."""
-    if prob < 0.40:
+    if prob < 0.35:
         return "Low"
-    elif prob < 0.65:
+    elif prob < 0.60:
         return "Moderate"
     else:
         return "High"
 
 
-def get_recommendation(disease: str, risk_level: str) -> str:
-    """Return a simple, safe recommendation based on disease + risk level."""
-    recommendations = {
-        "Kidney Disease": {
-            "Low": "Your kidney indicators appear within normal range. Stay hydrated and maintain annual check-ups.",
-            "Moderate": "Some kidney indicators are concerning. Reduce salt intake, stay hydrated, and consult a nephrologist.",
-            "High": "Multiple kidney risk factors detected. Please consult a nephrologist promptly for further evaluation.",
-        },
-        "Heart Disease": {
-            "Low": "Your cardiac indicators appear within normal range. Maintain a heart-healthy diet and regular exercise.",
-            "Moderate": "Some cardiac risk factors are present. Consider lifestyle changes and consult a cardiologist.",
-            "High": "Significant cardiac risk factors detected. Please consult a cardiologist promptly for evaluation.",
-        },
-        "Liver Disease": {
-            "Low": "Your liver function indicators appear within normal range. Limit alcohol and maintain a healthy diet.",
-            "Moderate": "Some liver function markers are elevated. Avoid alcohol, reduce fatty foods, and consult a hepatologist.",
-            "High": "Multiple liver function abnormalities detected. Please consult a hepatologist promptly.",
-        },
-        "Diabetes": {
-            "Low": "Your metabolic indicators suggest low diabetes risk. Maintain a balanced diet and regular exercise.",
-            "Moderate": "Some metabolic risk factors are present. Monitor blood sugar, reduce sugary foods, and consult a doctor.",
-            "High": "Significant diabetes risk factors detected. Please consult an endocrinologist for glucose testing.",
-        },
-    }
-    return recommendations.get(disease, {}).get(risk_level, "Please consult a healthcare professional.")
+RECOMMENDATIONS = {
+    "Kidney Disease": {
+        "Low":      "Your kidney indicators appear within normal range. Stay hydrated and maintain annual check-ups.",
+        "Moderate": "Some kidney indicators are concerning. Reduce salt intake, stay hydrated, and consult a nephrologist.",
+        "High":     "Multiple kidney risk factors detected. Please consult a nephrologist promptly for further evaluation.",
+    },
+    "Heart Disease": {
+        "Low":      "Your cardiac indicators appear within normal range. Maintain a heart-healthy diet and regular exercise.",
+        "Moderate": "Some cardiac risk factors are present. Consider lifestyle changes and consult a cardiologist.",
+        "High":     "Significant cardiac risk factors detected. Please consult a cardiologist promptly for evaluation.",
+    },
+    "Liver Disease": {
+        "Low":      "Your liver function indicators appear within normal range. Limit alcohol and maintain a healthy diet.",
+        "Moderate": "Some liver function markers are elevated. Avoid alcohol, reduce fatty foods, and consult a hepatologist.",
+        "High":     "Multiple liver function abnormalities detected. Please consult a hepatologist promptly.",
+    },
+    "Diabetes": {
+        "Low":      "Your metabolic indicators suggest low diabetes risk. Maintain a balanced diet and regular exercise.",
+        "Moderate": "Some metabolic risk factors are present. Monitor blood sugar, reduce sugary foods, and consult a doctor.",
+        "High":     "Significant diabetes risk factors detected. Please consult an endocrinologist for glucose testing.",
+    },
+}
 
 
-# ─── Individual Prediction Functions ──────────────────────────────────────────
+def get_recommendation(disease: str, risk: str) -> str:
+    return RECOMMENDATIONS.get(disease, {}).get(risk, "Please consult a healthcare professional.")
 
-def predict_kidney(model_bundle: dict, data: MasterInputSchema) -> PredictionResult:
-    """Run the kidney disease prediction model."""
+
+def _run_prediction(disease_name, model_bundle, feature_array, clinical_score, features_used):
+    model = model_bundle["model"]
+    scaler = model_bundle.get("scaler")
+
+    X = feature_array.copy()
+    if scaler is not None:
+        X = scaler.transform(X)
+
+    raw_prob = float(model.predict_proba(X)[0][1])
+    adjusted_prob = apply_clinical_adjustment(raw_prob, clinical_score)
+    risk = probability_to_risk(adjusted_prob)
+    confidence_note = get_confidence_note(clinical_score, raw_prob, adjusted_prob)
+
+    return PredictionResult(
+        disease=disease_name,
+        risk_level=risk,
+        probability=round(adjusted_prob, 4),
+        percentage=int(adjusted_prob * 100),
+        recommendation=get_recommendation(disease_name, risk),
+        features_used=features_used,
+        model_available=True,
+        raw_model_probability=round(raw_prob, 4),
+        clinical_risk_score=clinical_score.get("clinical_risk_score"),
+        confidence_note=confidence_note,
+        abnormal_markers=clinical_score.get("warnings", []),
+        markers_checked=clinical_score.get("provided_count", 0),
+    )
+
+
+def _error_result(disease, error_msg):
+    return PredictionResult(
+        disease=disease, risk_level="Unknown",
+        probability=0.0, percentage=0,
+        recommendation=f"Prediction failed: {error_msg}.",
+        features_used=[], model_available=False,
+        raw_model_probability=None, clinical_risk_score=None,
+        confidence_note="Prediction could not be completed.",
+        abnormal_markers=[], markers_checked=0,
+    )
+
+
+def predict_kidney(model_bundle, data):
     try:
-        model = model_bundle["model"]
-        scaler = model_bundle.get("scaler")
-
-        # Get feature array
-        X = map_kidney_features(data)
-
-        # Apply scaling if scaler exists
-        if scaler is not None:
-            X = scaler.transform(X)
-
-        # Get probability of disease (class 1)
-        prob = float(model.predict_proba(X)[0][1])
-        risk = probability_to_risk(prob)
-
-        return PredictionResult(
-            disease="Kidney Disease",
-            risk_level=risk,
-            probability=round(prob, 4),
-            percentage=int(prob * 100),
-            recommendation=get_recommendation("Kidney Disease", risk),
-            features_used=get_kidney_features_used(data),
-            model_available=True,
-        )
+        clinical = compute_clinical_score(data, KIDNEY_KEY_MARKERS)
+        return _run_prediction("Kidney Disease", model_bundle, map_kidney_features(data), clinical, get_kidney_features_used(data))
     except Exception as e:
-        return PredictionResult(
-            disease="Kidney Disease",
-            risk_level="Unknown",
-            probability=0.0,
-            percentage=0,
-            recommendation=f"Prediction failed: {str(e)}. Please check your input values.",
-            features_used=[],
-            model_available=False,
-        )
+        return _error_result("Kidney Disease", str(e))
 
 
-def predict_heart(model_bundle: dict, data: MasterInputSchema) -> PredictionResult:
-    """Run the heart disease prediction model."""
+def predict_heart(model_bundle, data):
     try:
-        model = model_bundle["model"]
-        scaler = model_bundle.get("scaler")
-
-        X = map_heart_features(data)
-
-        # Heart model: notebook showed scaler only applied to numeric columns
-        # For Random Forest (no scaling needed), scaler may be None
-        if scaler is not None:
-            X = scaler.transform(X)
-
-        prob = float(model.predict_proba(X)[0][1])
-        risk = probability_to_risk(prob)
-
-        return PredictionResult(
-            disease="Heart Disease",
-            risk_level=risk,
-            probability=round(prob, 4),
-            percentage=int(prob * 100),
-            recommendation=get_recommendation("Heart Disease", risk),
-            features_used=get_heart_features_used(data),
-            model_available=True,
-        )
+        clinical = compute_clinical_score(data, HEART_KEY_MARKERS)
+        return _run_prediction("Heart Disease", model_bundle, map_heart_features(data), clinical, get_heart_features_used(data))
     except Exception as e:
-        return PredictionResult(
-            disease="Heart Disease",
-            risk_level="Unknown",
-            probability=0.0,
-            percentage=0,
-            recommendation=f"Prediction failed: {str(e)}. Please check your input values.",
-            features_used=[],
-            model_available=False,
-        )
+        return _error_result("Heart Disease", str(e))
 
 
-def predict_liver(model_bundle: dict, data: MasterInputSchema) -> PredictionResult:
-    """Run the liver disease prediction model."""
+def predict_liver(model_bundle, data):
     try:
-        model = model_bundle["model"]
-        scaler = model_bundle.get("scaler")
-
-        X = map_liver_features(data)
-
-        if scaler is not None:
-            X = scaler.transform(X)
-
-        prob = float(model.predict_proba(X)[0][1])
-        risk = probability_to_risk(prob)
-
-        return PredictionResult(
-            disease="Liver Disease",
-            risk_level=risk,
-            probability=round(prob, 4),
-            percentage=int(prob * 100),
-            recommendation=get_recommendation("Liver Disease", risk),
-            features_used=get_liver_features_used(data),
-            model_available=True,
-        )
+        clinical = compute_clinical_score(data, LIVER_KEY_MARKERS)
+        return _run_prediction("Liver Disease", model_bundle, map_liver_features(data), clinical, get_liver_features_used(data))
     except Exception as e:
-        return PredictionResult(
-            disease="Liver Disease",
-            risk_level="Unknown",
-            probability=0.0,
-            percentage=0,
-            recommendation=f"Prediction failed: {str(e)}. Please check your input values.",
-            features_used=[],
-            model_available=False,
-        )
+        return _error_result("Liver Disease", str(e))
 
 
-def predict_diabetes(model_bundle: dict, data: MasterInputSchema) -> PredictionResult:
-    """Run the diabetes prediction model."""
+def predict_diabetes(model_bundle, data):
     try:
-        model = model_bundle["model"]
-        scaler = model_bundle.get("scaler")
-
-        X = map_diabetes_features(data)
-
-        if scaler is not None:
-            X = scaler.transform(X)
-
-        prob = float(model.predict_proba(X)[0][1])
-        risk = probability_to_risk(prob)
-
-        return PredictionResult(
-            disease="Diabetes",
-            risk_level=risk,
-            probability=round(prob, 4),
-            percentage=int(prob * 100),
-            recommendation=get_recommendation("Diabetes", risk),
-            features_used=get_diabetes_features_used(data),
-            model_available=True,
-        )
+        clinical = compute_clinical_score(data, DIABETES_KEY_MARKERS)
+        return _run_prediction("Diabetes", model_bundle, map_diabetes_features(data), clinical, get_diabetes_features_used(data))
     except Exception as e:
-        return PredictionResult(
-            disease="Diabetes",
-            risk_level="Unknown",
-            probability=0.0,
-            percentage=0,
-            recommendation=f"Prediction failed: {str(e)}. Please check your input values.",
-            features_used=[],
-            model_available=False,
-        )
+        return _error_result("Diabetes", str(e))
 
 
-# ─── Master Prediction Function ───────────────────────────────────────────────
-
-def run_all_predictions(models: dict, data: MasterInputSchema) -> list[PredictionResult]:
-    """
-    Run all 4 models and return a list of PredictionResult objects.
-    Even if one model fails (missing pkl), the others still run.
-    """
+def run_all_predictions(models: dict, data: MasterInputSchema) -> list:
     results = []
-
-    # Kidney
-    if models.get("kidney"):
-        results.append(predict_kidney(models["kidney"], data))
-    else:
-        results.append(PredictionResult(
-            disease="Kidney Disease", risk_level="Unavailable",
-            probability=0, percentage=0,
-            recommendation="Kidney model not loaded. Add kidney_model.pkl to backend/models/.",
-            features_used=[], model_available=False,
-        ))
-
-    # Heart
-    if models.get("heart"):
-        results.append(predict_heart(models["heart"], data))
-    else:
-        results.append(PredictionResult(
-            disease="Heart Disease", risk_level="Unavailable",
-            probability=0, percentage=0,
-            recommendation="Heart model not loaded. Add heart_model.pkl to backend/models/.",
-            features_used=[], model_available=False,
-        ))
-
-    # Liver
-    if models.get("liver"):
-        results.append(predict_liver(models["liver"], data))
-    else:
-        results.append(PredictionResult(
-            disease="Liver Disease", risk_level="Unavailable",
-            probability=0, percentage=0,
-            recommendation="Liver model not loaded. Add liver_model.pkl to backend/models/.",
-            features_used=[], model_available=False,
-        ))
-
-    # Diabetes
-    if models.get("diabetes"):
-        results.append(predict_diabetes(models["diabetes"], data))
-    else:
-        results.append(PredictionResult(
-            disease="Diabetes", risk_level="Unavailable",
-            probability=0, percentage=0,
-            recommendation="Diabetes model not loaded. Add diabetes_model.pkl to backend/models/.",
-            features_used=[], model_available=False,
-        ))
-
+    disease_map = {
+        "kidney":   ("Kidney Disease", predict_kidney),
+        "heart":    ("Heart Disease",  predict_heart),
+        "liver":    ("Liver Disease",  predict_liver),
+        "diabetes": ("Diabetes",       predict_diabetes),
+    }
+    for key, (disease_name, fn) in disease_map.items():
+        if models.get(key):
+            results.append(fn(models[key], data))
+        else:
+            results.append(PredictionResult(
+                disease=disease_name, risk_level="Unavailable",
+                probability=0, percentage=0,
+                recommendation=f"Add {key}_model.pkl to backend/models/.",
+                features_used=[], model_available=False,
+                raw_model_probability=None, clinical_risk_score=None,
+                confidence_note="Model not available.",
+                abnormal_markers=[], markers_checked=0,
+            ))
     return results
+
+
