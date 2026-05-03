@@ -1,4 +1,5 @@
 // App.jsx — Main application. Manages mode switching, form state, and results display.
+import React from "react";
 import { useState } from "react";
 import LabForm from "./components/LabForm";
 import PDFUpload from "./components/PDFUpload";
